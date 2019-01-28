@@ -1,66 +1,25 @@
-// Take 2.  Use ADC clock.  Not gonna worry about setting for input bias...I think the mic does
-//  that for us.  
-#include <Adafruit_GFX.h>   // Core graphics library
-#include <RGBmatrixPanel.h> // Hardware-specific library
-#include <arduinoFFT.h>
+// Sampling for mega.
+// First cut...just prints. 
 
+//  We're using A5 as our audio input pin.
+//  To use the (slower) analogRead(), comment out this define.  Otherwise we do a faster bitbang of the ADC.
+//  NOTE:  If you are doing bit-banging, you need to connect 5v ref to AREF pin on the mega.
+#define BIT_BANG_ADC
 
-#define CLK 11  // MUST be on PORTB! (Use pin 11 on Mega)
-#define LAT 10
-#define OE  9
-#define A   A0
-#define B   A1
-#define C   A2
-#define D   A3
-
-/* Pin Mapping:
- *  Sig   Uno  Mega
- *  R0    2    24
- *  G0    3    25
- *  B0    4    26
- *  R1    5    27
- *  G1    6    28
- *  B1    7    29
- */
-
-// Last parameter = 'true' enables double-buffering, for flicker-free,
-// buttery smooth animation.  Note that NOTHING WILL SHOW ON THE DISPLAY
-// until the first call to swapBuffers().  This is normal.
-//RGBmatrixPanel matrix(A, B, C,  D,  CLK, LAT, OE, false);
-// Double-buffered mode consumes nearly all the RAM available on the
-// Arduino Uno -- only a handful of free bytes remain.  Even the
-// following string needs to go in PROGMEM:
-
-#define DISPLAY_COLUMNS 32
-
-#define ENVELOPE_PIN A5
-
-// NOTE!!! if doing "collect_accurate_samples", we're bitbanging the ADC config, and won't
-// use this define.
-#define AUDIO_PIN A0
+#define MUX_MASK 0x05
+#define AUDIO_PIN A5
 
 // These are the raw samples from the audio input.
 #define SAMPLE_SIZE 32
 int sample[SAMPLE_SIZE] = {0};
 
-// These are used to do the FFT.
-double vReal[SAMPLE_SIZE];
-double vImag[SAMPLE_SIZE];
-arduinoFFT FFT = arduinoFFT();
-
-// This is our FFT output
-char data_avgs[DISPLAY_COLUMNS];
-
-int gain=8;
-
 void setup() 
 {
   Serial.begin(9600);
   
-  //matrix.begin();
-
+  #ifdef BIT_BANG_ADC
   setupADC();
-
+  #endif
 }
 
 void setupADC( void )
@@ -73,17 +32,10 @@ void setupADC( void )
    // MATH FROM ABOVE...in measurements, it looks like prescalar of 32 gives me sample freq of 40 KHz
    //    on the UNO.
 
-    // This was the reference...                          
-    //ADMUX = 0b00000000;       // use pin A0 and external voltage reference
-
-    // Trying with internal voltage reference to save a wire...
-    // WORKED!
-    //ADMUX = 0b01000000;
-
-
-    // now try moving to A5
-    ADMUX = 0b01000101;
-    delay(50);  //wait for voltages to stabalize.  Necessary?
+    // A5, internal reference.
+    ADMUX =  MUX_MASK;
+    
+    delay(50);  //wait for voltages to stabalize.  
 }
 
 void collect_accurate_samples( void )
@@ -113,107 +65,7 @@ void collect_samples( void )
   }
 }
 
-#define SAMPLE_BIAS 512
-#define GAIN        8
 
-// Mapped sample should give a number between 0 and 31
-int map_sample( int input )
-{
-  int mapped_sample;
-  
-  // Looks like our samples are quiet, so I'm gonna start with a very quiet mapping.
-
-  // start by taking out DC bias.  This will make negative #s...
-  mapped_sample = input - SAMPLE_BIAS;
-
-  // Now make this a 0-31 number.  
-
-  // add in gain.
-  mapped_sample = mapped_sample / gain;
-  
-  // center on 16.
-  mapped_sample = mapped_sample + 16;
-
-  // and clip.
-  if (mapped_sample > 31) mapped_sample = 31;
-  if (mapped_sample < 0) mapped_sample = 0;
-
-  return mapped_sample;
-}
-
-#if 0
-void show_samples( void )
-{
-  int x;
-  int y;
-
-  matrix.fillScreen(0);
-  
-  for (x=0; x < DISPLAY_COLUMNS; x++)
-  {
-    y=map_sample(sample[x]);
-    matrix.drawPixel(x,y,matrix.Color333(0,0,1));
-  }
-}
-
-
-void show_samples_lines( void )
-{
-  int x;
-  int y;
-  int last_x=0;
-  int last_y=16;
-
-  matrix.fillScreen(0);
-  
-  for (x=0; x < DISPLAY_COLUMNS; x++)
-  {
-    y=map_sample(sample[x]);
-    matrix.drawLine(last_x,last_y,x,y,matrix.Color333(0,0,1));
-    last_x = x;
-    last_y = y;
-  }
-}
-#endif
-
-void doFFT( void )
-{
-  int i;
-  int temp_sample;
-
-  for (i=0; i < SAMPLE_SIZE; i++)
-  {
-    // Remove 512 DC bias
-    temp_sample = sample[i] - SAMPLE_BIAS;
-
-    // Load the sample into the complex number...some compression here.
-    vReal[i] = temp_sample/8;
-    vImag[i] = 0;
-  }
-  
-  FFT.Windowing(vReal, SAMPLE_SIZE, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
-  FFT.Compute(vReal, vImag, SAMPLE_SIZE, FFT_FORWARD);
-  FFT.ComplexToMagnitude(vReal, vImag, SAMPLE_SIZE);
-}
-
-#if 0
-void display_freq_raw( void )
-{
-  int i;
-  int mag;
-
-  matrix.fillScreen(0);
-  
-  for (i = 0; i < SAMPLE_SIZE; i++)
-  {
-    mag = constrain(vReal[i], 0, 40);
-    mag = map(mag, 0, 40, 31, 0);
-
-    matrix.drawLine(i,31,i,mag, matrix.Color333(1,0,0));
-  }
-  
-}
-#endif
 
 void print_samples( void )
 {
@@ -236,8 +88,13 @@ void loop()
   unsigned long per_sample;
 
   start_time = micros();
+  
+  #ifdef BIT_BANG_ADC
   collect_accurate_samples();
-  //collect_samples();
+  #else
+  collect_samples();
+  #endif
+  
   stop_time = micros();
   
   print_samples();
