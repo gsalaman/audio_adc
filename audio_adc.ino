@@ -1,9 +1,11 @@
 // Sampling for mega.
 // Switch to envelope mode.  Use analogRead and gain pin.  Volume bar up top.
+// So I know the line is noisy.  Let's see if I can get an okay FFT by just using analogRead().
 
 
 #include <Adafruit_GFX.h>   // Core graphics library
 #include <RGBmatrixPanel.h> // Hardware-specific library
+#include <arduinoFFT.h>
 
 // Pin defines for the 32x32 RGB matrix.
 #define CLK 11  
@@ -45,6 +47,11 @@ int sample[SAMPLE_SIZE] = {0};
 //  Audio samples from the ADC are "centered" around 2.5v, which maps to 512 on the ADC.
 #define SAMPLE_BIAS 512
 
+// These are used to do the FFT.
+double vReal[SAMPLE_SIZE];
+double vImag[SAMPLE_SIZE];
+arduinoFFT FFT = arduinoFFT();
+
 // Mapped sample should give a number between 0 and 31.
 int map_sample( int input )
 {
@@ -81,8 +88,6 @@ void show_samples_lines( void )
   int y;
   int last_x=0;
   int last_y=16;
-
-  matrix.fillScreen(0);
   
   for (x=0; x < SAMPLE_SIZE; x++)
   {
@@ -203,6 +208,47 @@ void display_amp_bar( void )
   matrix.fillRect(0,0,max_amp, 4, matrix.Color333(1,0,0));
 }
 
+void doFFT( void )
+{
+  int i;
+  int temp_sample;
+  
+  for (i=0; i < SAMPLE_SIZE; i++)
+  {
+    // Remove DC bias
+    temp_sample = sample[i] - SAMPLE_BIAS;
+
+    // Load the sample into the complex number...some compression here.
+    vReal[i] = temp_sample/4;
+    //vReal[i] = temp_sample;
+    vImag[i] = 0;
+    
+  }
+  
+  FFT.Windowing(vReal, SAMPLE_SIZE, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(vReal, vImag, SAMPLE_SIZE, FFT_FORWARD);
+  FFT.ComplexToMagnitude(vReal, vImag, SAMPLE_SIZE);
+}
+
+#define MAX_FREQ_MAG 100
+void display_freq_raw( void )
+{
+  int i;
+  int mag;
+  int x;
+  
+  for (i = 0; i < SAMPLE_SIZE/2; i++)
+  {
+    mag = constrain(vReal[i], 0, MAX_FREQ_MAG);
+    mag = map(mag, 0, MAX_FREQ_MAG, 0, -8);
+
+    x = 2*i;
+    
+    matrix.drawRect(x,31,2,mag, matrix.Color333(0,1,0));
+  }
+}
+
+
 void loop() 
 {
 
@@ -215,9 +261,14 @@ void loop()
   #endif
 
   //print_samples();
-  show_samples_lines();
-  display_amp_bar();
+
+  doFFT();
   
+  matrix.fillScreen(0);
+  display_freq_raw();
+  display_amp_bar();
+  show_samples_lines();
+
   matrix.swapBuffers(true);
 
 #if 0
