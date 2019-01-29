@@ -1,7 +1,6 @@
 // Sampling for mega.
-// Use analogRead on audio line and gain pin.  Volume bar up top.
-// So I know the line is noisy.  Let's see if I can get an okay FFT by just using analogRead().
-
+// Explore using the audio jack.  Use code and circuit from:
+// https://github.com/shajeebtm/Arduino-audio-spectrum-visualizer-analyzer
 
 #include <Adafruit_GFX.h>   // Core graphics library
 #include <RGBmatrixPanel.h> // Hardware-specific library
@@ -29,29 +28,30 @@
 // Note "false" for double-buffering to consume less memory, or "true" for double-buffered.
 RGBmatrixPanel matrix(A, B, C,  D,  CLK, LAT, OE, true);
 
-//  We're using A5 as our audio input pin.
-//  To use the (slower) analogRead(), comment out this define.  Otherwise we do a faster bitbang of the ADC.
-//  NOTE:  If you are doing bit-banging, you need to connect 5v ref to AREF pin on the mega.
-//#define BIT_BANG_ADC
 
-#define MUX_MASK 0x05
-#define AUDIO_PIN A5
+// Mic jack is on A5.  Bit-banging the register.
 
-#define GAIN_PIN  A4
-int gain=1;
 
 // These are the raw samples from the audio input.
-#define SAMPLE_SIZE 32
+#define SAMPLE_SIZE 64
 int sample[SAMPLE_SIZE] = {0};
 
-//  Audio samples from the ADC are "centered" around 2.5v, which maps to 512 on the ADC.
-#define SAMPLE_BIAS 512
+#define XRES 32   // display columns...must be <= SAMPLES/2
+#define YRES 8    // display rows
 
 // These are used to do the FFT.
 double vReal[SAMPLE_SIZE];
 double vImag[SAMPLE_SIZE];
 arduinoFFT FFT = arduinoFFT();
 
+#define SAMPLE_BIAS 512
+
+// display bars.
+char data_avgs[XRES];
+
+int gain=1;
+
+// UNUSED!
 // Mapped sample should give a number between 0 and 31.
 int map_sample( int input )
 {
@@ -73,15 +73,9 @@ int map_sample( int input )
   return mapped_sample;
 }
 
-void read_gain( void )
-{
-   int raw_gain;
-
-   raw_gain = analogRead(GAIN_PIN);
-   gain = map(raw_gain, 0, 1023, 1, 32);
-}
 
 
+// UNUSED!!
 void show_samples_lines( void )
 {
   int x;
@@ -106,55 +100,44 @@ void setup()
 
   matrix.begin();
   
-  #ifdef BIT_BANG_ADC
   setupADC();
-  #endif
 }
 
 void setupADC( void )
 {
 
     ADCSRA = 0b11100101;      // set ADC to free running mode and set pre-scalar to 32 (0xe5)
-                              // pre-scalar 32 should give sample frequency of 38.64 KHz...which
-                              // will reproduce samples up to 19.32 KHz
-
-   // MATH FROM ABOVE...in measurements, it looks like prescalar of 32 gives me sample freq of 40 KHz
-   //    on the UNO.  Same on mega.  Hmmm.
+                              // pre-scalar 32 should give sample frequency of 40 KHz...which
+                              // will reproduce samples up to 20 KHz
 
     // A5, internal reference.
-    ADMUX =  MUX_MASK;
+    ADMUX =  0x05;
     
     delay(50);  //wait for voltages to stabalize.  
 }
+
 
 void collect_accurate_samples( void )
 {
   //use ADC internals.
 
   int i;
+  int value;
 
   for (i=0; i<SAMPLE_SIZE; i++)
   {
     while(!(ADCSRA & 0x10));        // wait for ADC to complete current conversion ie ADIF bit set
     ADCSRA = 0b11110101 ;               // clear ADIF bit so that ADC can do next operation (0xf5)
 
-    sample[i] = ADC;
+    value = ADC - SAMPLE_BIAS;
+    sample[i] = value;
+    vReal[i] = value/8;
+    vImag[i] = 0;
   }
 
   
   
 }
-
-void collect_samples( void )
-{
-  int i;
-  for (i = 0; i < SAMPLE_SIZE; i++)
-  {
-    sample[i] = analogRead(AUDIO_PIN);
-  }
-}
-
-
 
 void print_samples( void )
 {
@@ -210,20 +193,6 @@ void display_amp_bar( void )
 
 void doFFT( void )
 {
-  int i;
-  int temp_sample;
-  
-  for (i=0; i < SAMPLE_SIZE; i++)
-  {
-    // Remove DC bias
-    temp_sample = sample[i] - SAMPLE_BIAS;
-
-    // Load the sample into the complex number...some compression here.
-    vReal[i] = temp_sample/4;
-    //vReal[i] = temp_sample;
-    vImag[i] = 0;
-    
-  }
   
   FFT.Windowing(vReal, SAMPLE_SIZE, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
   FFT.Compute(vReal, vImag, SAMPLE_SIZE, FFT_FORWARD);
@@ -248,27 +217,33 @@ void display_freq_raw( void )
   }
 }
 
+void display_freq_orig( void )
+{
+  int i;
+  
+  // Right now, assuming #samples is 2x number of columns.
+  // therefore we don't need to map our vReal results to columns...they're already there.
+
+  for (i=0; i<XRES; i++)
+  {
+    data_avgs[i]= constrain(vReal[i],0,80);
+    data_avgs[i]=map(data_avgs[i],0,80,0,YRES);
+
+    matrix.drawRect(i,32,1,0-data_avgs[i],matrix.Color333(0,1,0));
+  }
+  
+}
+
 
 void loop() 
 {
 
-  read_gain();
-  
-  #ifdef BIT_BANG_ADC
   collect_accurate_samples();
-  #else
-  collect_samples();
-  #endif
-
-  //print_samples();
-
   doFFT();
   
   matrix.fillScreen(0);
-  display_freq_raw();
-  display_amp_bar();
-  show_samples_lines();
-
+  display_freq_orig();
+  
   matrix.swapBuffers(true);
 
 #if 0
