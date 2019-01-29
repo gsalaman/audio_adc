@@ -93,85 +93,9 @@ void show_samples_lines( void )
   }
 }
 
-void show_samples_bars( void )
-{
-  int x;
-  int y;
-
-  matrix.fillScreen(0);
-
-  for (x=0;x<SAMPLE_SIZE;x++)
-  {
-    y = map_sample(sample[x]);
-    matrix.drawLine(x,16,x,y,matrix.Color333(0,0,1));
-  }
-}
-
-int sample_hist_max[SAMPLE_SIZE];
-int sample_hist_min[SAMPLE_SIZE];
-int sample_hist_decay[SAMPLE_SIZE] = {0};
-
-void init_hists( void )
-{
-  int i;
-
-  for (i=0; i<SAMPLE_SIZE; i++)
-  {
-    sample_hist_max[i] = 16;
-    sample_hist_min[i] = 16;
-  }
-}
-
-void show_samples_bars_peaks( void )
-{
-  int x;
-  int y;
-
-  matrix.fillScreen(0);
-
-  for (x=0;x<SAMPLE_SIZE;x++)
-  {
-    y = map_sample(sample[x]);
-    matrix.drawLine(x,16,x,y,matrix.Color333(0,0,1));
-
-    // Store new peaks
-    if (y > sample_hist_max[x])
-    {
-       sample_hist_max[x] = y;
-    }
-    if (y < sample_hist_min[x])
-    {
-       sample_hist_min[x] = y;
-    }
-
-    // draw the high and low peaks for this location...but only if we're far enough away from the axis.
-    if (sample_hist_max[x] > 18) matrix.drawPixel(x,sample_hist_max[x],matrix.Color333(7,0,0));
-    if (sample_hist_min[x] < 14) matrix.drawPixel(x,sample_hist_min[x],matrix.Color333(7,0,0));
-  }
-}
-
-#define MAX_AMP 200
-void draw_envelope_bar( void )
-{
-  int x;
-  int y;
-  
-  
-  // envelope samples are just magnitude.  Start by just doing it as a volume vs time bar...
-  for (x = 0; x < SAMPLE_SIZE; x++)
-  {
-    y = sample[x];
-    // y=y/gain;
-    y = map(y,0,MAX_AMP,31,0);
-    matrix.drawLine(x,31,x,y,matrix.Color333(1,0,0));
-  }
-  
-}
 
 void setup() 
 {
-
-  init_hists();
   
   Serial.begin(9600);
 
