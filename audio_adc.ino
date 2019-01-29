@@ -1,5 +1,5 @@
 // Sampling for mega.
-// Switch to envelope mode.  Use analogRead and gain pin.  Volume bar up top.
+// Use analogRead on audio line and gain pin.  Volume bar up top.
 // So I know the line is noisy.  Let's see if I can get an okay FFT by just using analogRead().
 
 
