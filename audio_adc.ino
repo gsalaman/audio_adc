@@ -1,5 +1,6 @@
 // Sampling for mega.
-// Second cut...time visualizer, full screen. 
+// Switch to envelope mode.  Use analogRead and gain pin.  Volume bar up top.
+
 
 #include <Adafruit_GFX.h>   // Core graphics library
 #include <RGBmatrixPanel.h> // Hardware-specific library
@@ -92,8 +93,86 @@ void show_samples_lines( void )
   }
 }
 
+void show_samples_bars( void )
+{
+  int x;
+  int y;
+
+  matrix.fillScreen(0);
+
+  for (x=0;x<SAMPLE_SIZE;x++)
+  {
+    y = map_sample(sample[x]);
+    matrix.drawLine(x,16,x,y,matrix.Color333(0,0,1));
+  }
+}
+
+int sample_hist_max[SAMPLE_SIZE];
+int sample_hist_min[SAMPLE_SIZE];
+int sample_hist_decay[SAMPLE_SIZE] = {0};
+
+void init_hists( void )
+{
+  int i;
+
+  for (i=0; i<SAMPLE_SIZE; i++)
+  {
+    sample_hist_max[i] = 16;
+    sample_hist_min[i] = 16;
+  }
+}
+
+void show_samples_bars_peaks( void )
+{
+  int x;
+  int y;
+
+  matrix.fillScreen(0);
+
+  for (x=0;x<SAMPLE_SIZE;x++)
+  {
+    y = map_sample(sample[x]);
+    matrix.drawLine(x,16,x,y,matrix.Color333(0,0,1));
+
+    // Store new peaks
+    if (y > sample_hist_max[x])
+    {
+       sample_hist_max[x] = y;
+    }
+    if (y < sample_hist_min[x])
+    {
+       sample_hist_min[x] = y;
+    }
+
+    // draw the high and low peaks for this location...but only if we're far enough away from the axis.
+    if (sample_hist_max[x] > 18) matrix.drawPixel(x,sample_hist_max[x],matrix.Color333(7,0,0));
+    if (sample_hist_min[x] < 14) matrix.drawPixel(x,sample_hist_min[x],matrix.Color333(7,0,0));
+  }
+}
+
+#define MAX_AMP 200
+void draw_envelope_bar( void )
+{
+  int x;
+  int y;
+  
+  
+  // envelope samples are just magnitude.  Start by just doing it as a volume vs time bar...
+  for (x = 0; x < SAMPLE_SIZE; x++)
+  {
+    y = sample[x];
+    // y=y/gain;
+    y = map(y,0,MAX_AMP,31,0);
+    matrix.drawLine(x,31,x,y,matrix.Color333(1,0,0));
+  }
+  
+}
+
 void setup() 
 {
+
+  init_hists();
+  
   Serial.begin(9600);
 
   matrix.begin();
@@ -111,7 +190,7 @@ void setupADC( void )
                               // will reproduce samples up to 19.32 KHz
 
    // MATH FROM ABOVE...in measurements, it looks like prescalar of 32 gives me sample freq of 40 KHz
-   //    on the UNO.
+   //    on the UNO.  Same on mega.  Hmmm.
 
     // A5, internal reference.
     ADMUX =  MUX_MASK;
@@ -160,6 +239,45 @@ void print_samples( void )
   Serial.println("===================");
 }
 
+int find_max_amp( void )
+{
+  int i;
+  int max_amp=0;
+  int temp_sample;
+
+  for (i=0; i<SAMPLE_SIZE; i++)
+  {
+    // first need to adjust the samples for the 512 bias.
+    temp_sample = sample[i] - 512;
+
+    // then we want the absolute value
+    if (temp_sample < 0) temp_sample = 0 - temp_sample;
+
+    // is it bigger than our current max?
+    if (temp_sample > max_amp) max_amp = temp_sample;
+   }
+
+   return max_amp;
+}
+
+void display_amp_bar( void )
+{
+  int max_amp = find_max_amp();
+
+  // our time visualizer took a voltage from 0 to 1023 and mapped it to 0 to 31.  
+  // I want that same type of range...but max_amp is *ONLY* a positive # from 0-511.
+
+  // multiply by 2 (since we're abs, not full +/- range
+  max_amp = max_amp * 2;
+  
+  // add in gain.  
+  max_amp = max_amp / gain;
+
+  // clip
+  if (max_amp > 31) max_amp = 31;
+
+  matrix.fillRect(0,0,max_amp, 4, matrix.Color333(1,0,0));
+}
 
 void loop() 
 {
@@ -172,8 +290,16 @@ void loop()
   collect_samples();
   #endif
 
+  //print_samples();
   show_samples_lines();
-
+  display_amp_bar();
+  
   matrix.swapBuffers(true);
+
+#if 0
+  Serial.println("hit enter for next sampling");
+  while (!Serial.available());
+  while (Serial.available()) Serial.read();
+#endif
   
 }
