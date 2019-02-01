@@ -1,6 +1,6 @@
 // Sampling for mega.
-// Use analogRead on audio line and gain pin.  Volume bar up top.
-// So I know the line is noisy.  Let's see if I can get an okay FFT by just using analogRead().
+// Use analogRead on audio line.  Fixed gains.  Volume bar up top, real time middle, spectrum bottom.
+// I think this (mostly) works for both audio jack and mic.
 
 
 #include <Adafruit_GFX.h>   // Core graphics library
@@ -38,7 +38,7 @@ RGBmatrixPanel matrix(A, B, C,  D,  CLK, LAT, OE, true);
 #define AUDIO_PIN A5
 
 #define GAIN_PIN  A4
-int gain=1;
+int gain=8;
 
 // These are the raw samples from the audio input.
 #define SAMPLE_SIZE 32
@@ -51,6 +51,27 @@ int sample[SAMPLE_SIZE] = {0};
 double vReal[SAMPLE_SIZE];
 double vImag[SAMPLE_SIZE];
 arduinoFFT FFT = arduinoFFT();
+
+// Color pallete for spectrum...cooler than just single green.
+uint16_t spectrum_colors[] = 
+{
+  matrix.Color444(7,0,0),   // index 0
+  matrix.Color444(6,1,0),   // index 1
+  matrix.Color444(5,2,0),   // index 2
+  matrix.Color444(4,3,0),   // index 3
+  matrix.Color444(3,4,0),   // index 4
+  matrix.Color444(2,5,0),   // index 5
+  matrix.Color444(1,6,0),   // index 6
+  matrix.Color444(0,7,0),   // index 7 
+  matrix.Color444(0,6,1),   // index 8
+  matrix.Color444(0,5,2),   // index 9
+  matrix.Color444(0,4,3),   // index 10
+  matrix.Color444(0,3,4),   // index 11
+  matrix.Color444(0,2,5),   // index 12 
+  matrix.Color444(0,1,6),   // index 13
+  matrix.Color444(0,0,6),   // index 14
+  matrix.Color444(0,0,10)    // index 15 
+};
 
 // Mapped sample should give a number between 0 and 31.
 int map_sample( int input )
@@ -244,7 +265,7 @@ void display_freq_raw( void )
 
     x = 2*i;
     
-    matrix.drawRect(x,31,2,mag, matrix.Color333(0,1,0));
+    matrix.drawRect(x,32,2,mag, spectrum_colors[i]);
   }
 }
 
@@ -252,7 +273,7 @@ void display_freq_raw( void )
 void loop() 
 {
 
-  read_gain();
+  //read_gain();
   
   #ifdef BIT_BANG_ADC
   collect_accurate_samples();
