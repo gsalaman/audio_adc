@@ -1,7 +1,8 @@
 // Sampling for mega.
-// Use analogRead on audio line.  Fixed gains.  Volume bar up top, real time middle, spectrum bottom.
-// I think this (mostly) works for both audio jack and mic.
+// Sample at 10 KHz.  Use bit-bang ADC (needs aref)...so also use external jack.
+// Fixed gains.  Volume bar up top, real time middle, spectrum bottom.
 
+// 10 KHz sample gives 5 KHz span for display...divide by 16 to make 312.5 KHz per bin.
 
 #include <Adafruit_GFX.h>   // Core graphics library
 #include <RGBmatrixPanel.h> // Hardware-specific library
@@ -32,7 +33,7 @@ RGBmatrixPanel matrix(A, B, C,  D,  CLK, LAT, OE, true);
 //  We're using A5 as our audio input pin.
 //  To use the (slower) analogRead(), comment out this define.  Otherwise we do a faster bitbang of the ADC.
 //  NOTE:  If you are doing bit-banging, you need to connect 5v ref to AREF pin on the mega.
-//#define BIT_BANG_ADC
+#define BIT_BANG_ADC
 
 #define MUX_MASK 0x05
 #define AUDIO_PIN A5
@@ -134,13 +135,20 @@ void setup()
 
 void setupADC( void )
 {
+   // MATH ...in measurements, it looks like prescalar of 32 gives me sample freq of 40 KHz
+   //    on the UNO.  Same on mega.  Hmmm.
 
-    ADCSRA = 0b11100101;      // set ADC to free running mode and set pre-scalar to 32 (0xe5)
+   
+   // Prescalar of 128 gives 9 KHz sample rate.
+   // Prescalar of 64 gives 14 KHz.  
+   // Prescalar of 32 gives 22 KHz
+   // prescalar of 16 gives 52-66.
+    
+    ADCSRA = 0b11100111;      // set ADC to free running mode and set pre-scalar to 32 (0xe5)
                               // pre-scalar 32 should give sample frequency of 38.64 KHz...which
                               // will reproduce samples up to 19.32 KHz
 
-   // MATH FROM ABOVE...in measurements, it looks like prescalar of 32 gives me sample freq of 40 KHz
-   //    on the UNO.  Same on mega.  Hmmm.
+
 
     // A5, internal reference.
     ADMUX =  MUX_MASK;
@@ -153,17 +161,14 @@ void collect_accurate_samples( void )
   //use ADC internals.
 
   int i;
-
+  
   for (i=0; i<SAMPLE_SIZE; i++)
   {
     while(!(ADCSRA & 0x10));        // wait for ADC to complete current conversion ie ADIF bit set
-    ADCSRA = 0b11110101 ;               // clear ADIF bit so that ADC can do next operation (0xf5)
+    ADCSRA = ADCSRA | 0x10 ;        // clear ADIF bit so that ADC can do next operation (0xf5)
 
     sample[i] = ADC;
   }
-
-  
-  
 }
 
 void collect_samples( void )
