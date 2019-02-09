@@ -1,11 +1,15 @@
-// Sampling for mega.
-// Use analogRead on audio line.  Fixed gains.  Volume bar up top, real time middle, spectrum bottom.
-// I think this (mostly) works for both audio jack and mic.
+// experiment with FHT
 
 
 #include <Adafruit_GFX.h>   // Core graphics library
 #include <RGBmatrixPanel.h> // Hardware-specific library
-#include <arduinoFFT.h>
+
+
+// FHT defines.  Looks like this library defines an input buffer for us called fht_input.
+// That input wants to be a 16 bit signed int.
+#define LOG_OUT 1
+#define FHT_N   32
+#include <FHT.h>
 
 // Pin defines for the 32x32 RGB matrix.
 #define CLK 11  
@@ -46,11 +50,6 @@ int sample[SAMPLE_SIZE] = {0};
 
 //  Audio samples from the ADC are "centered" around 2.5v, which maps to 512 on the ADC.
 #define SAMPLE_BIAS 512
-
-// These are used to do the FFT.
-double vReal[SAMPLE_SIZE];
-double vImag[SAMPLE_SIZE];
-arduinoFFT FFT = arduinoFFT();
 
 // Color pallete for spectrum...cooler than just single green.
 uint16_t spectrum_colors[] = 
@@ -229,7 +228,7 @@ void display_amp_bar( void )
   matrix.fillRect(0,0,max_amp, 4, matrix.Color333(1,0,0));
 }
 
-void doFFT( void )
+void doFHT( void )
 {
   int i;
   int temp_sample;
@@ -239,16 +238,17 @@ void doFFT( void )
     // Remove DC bias
     temp_sample = sample[i] - SAMPLE_BIAS;
 
-    // Load the sample into the complex number...some compression here.
-    vReal[i] = temp_sample/4;
-    //vReal[i] = temp_sample;
-    vImag[i] = 0;
+    // Load the sample into the input array
+    // unsure whether we need to compress yet...
+    //fht_input[i] = temp_sample/4;
+    fht_input[i] = temp_sample;
     
   }
   
-  FFT.Windowing(vReal, SAMPLE_SIZE, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
-  FFT.Compute(vReal, vImag, SAMPLE_SIZE, FFT_FORWARD);
-  FFT.ComplexToMagnitude(vReal, vImag, SAMPLE_SIZE);
+  fht_window();
+  fht_reorder();
+  fht_run();
+  fht_mag_log();
 }
 
 #define MAX_FREQ_MAG 100
@@ -260,7 +260,7 @@ void display_freq_raw( void )
   
   for (i = 0; i < SAMPLE_SIZE/2; i++)
   {
-    mag = constrain(vReal[i], 0, MAX_FREQ_MAG);
+    mag = constrain(fht_log_out[i], 0, MAX_FREQ_MAG);
     mag = map(mag, 0, MAX_FREQ_MAG, 0, -8);
 
     x = 2*i;
@@ -283,7 +283,7 @@ void loop()
 
   //print_samples();
 
-  doFFT();
+  doFHT();
   
   matrix.fillScreen(0);
   display_freq_raw();
