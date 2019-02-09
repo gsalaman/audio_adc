@@ -7,7 +7,8 @@
 
 // FHT defines.  Looks like this library defines an input buffer for us called fht_input.
 // That input wants to be a 16 bit signed int.
-#define LOG_OUT 1
+//#define LOG_OUT 1
+#define LIN_OUT 1
 #define FHT_N   32
 #include <FHT.h>
 
@@ -248,10 +249,10 @@ void doFHT( void )
   fht_window();
   fht_reorder();
   fht_run();
-  fht_mag_log();
+  fht_mag_lin();
 }
 
-#define MAX_FREQ_MAG 100
+#define MAX_FREQ_MAG 30
 void display_freq_raw( void )
 {
   int i;
@@ -260,7 +261,7 @@ void display_freq_raw( void )
   
   for (i = 0; i < SAMPLE_SIZE/2; i++)
   {
-    mag = constrain(fht_log_out[i], 0, MAX_FREQ_MAG);
+    mag = constrain(fht_lin_out[i], 0, MAX_FREQ_MAG);
     mag = map(mag, 0, MAX_FREQ_MAG, 0, -8);
 
     x = 2*i;
