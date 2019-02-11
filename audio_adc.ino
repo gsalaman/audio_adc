@@ -1,4 +1,5 @@
 // experiment with FHT
+// 64 sample version.
 
 
 #include <Adafruit_GFX.h>   // Core graphics library
@@ -9,7 +10,7 @@
 // That input wants to be a 16 bit signed int.
 //#define LOG_OUT 1
 #define LIN_OUT 1
-#define FHT_N   32
+#define FHT_N   64
 #include <FHT.h>
 
 // Pin defines for the 32x32 RGB matrix.
@@ -46,7 +47,7 @@ RGBmatrixPanel matrix(A, B, C,  D,  CLK, LAT, OE, true);
 int gain=8;
 
 // These are the raw samples from the audio input.
-#define SAMPLE_SIZE 32
+#define SAMPLE_SIZE FHT_N
 int sample[SAMPLE_SIZE] = {0};
 
 //  Audio samples from the ADC are "centered" around 2.5v, which maps to 512 on the ADC.
@@ -109,13 +110,28 @@ void show_samples_lines( void )
   int y;
   int last_x=0;
   int last_y=16;
-  
+
+  // since we've got more samples than columns in our LED matrix, we've got two choices:
+  // 1) display only the first 32.  (That's what I'm going with).
+  // 2) display every other sample.
   for (x=0; x < SAMPLE_SIZE; x++)
   {
     y=map_sample(sample[x]);
     matrix.drawLine(last_x,last_y,x,y,matrix.Color333(0,0,1));
     last_x = x;
     last_y = y;
+  }
+}
+
+void show_samples_dots( void )
+{
+  int x;
+  int y;
+
+  for (x=0;x<32;x++)
+  {
+    y = map_sample(sample[x]);
+    matrix.drawPixel(x,y,matrix.Color333(0,0,1));
   }
 }
 
@@ -169,6 +185,7 @@ void collect_accurate_samples( void )
 void collect_samples( void )
 {
   int i;
+  
   for (i = 0; i < SAMPLE_SIZE; i++)
   {
     sample[i] = analogRead(AUDIO_PIN);
@@ -258,15 +275,15 @@ void display_freq_raw( void )
   int i;
   int mag;
   int x;
-  
+
+
+  // This works because our sample buffer is 2x the display rows...
   for (i = 0; i < SAMPLE_SIZE/2; i++)
   {
     mag = constrain(fht_lin_out[i], 0, MAX_FREQ_MAG);
     mag = map(mag, 0, MAX_FREQ_MAG, 0, -8);
-
-    x = 2*i;
     
-    matrix.drawRect(x,32,2,mag, spectrum_colors[i]);
+    matrix.drawRect(i,32,1,mag, matrix.Color333(0,1,0));
   }
 }
 
@@ -289,7 +306,7 @@ void loop()
   matrix.fillScreen(0);
   display_freq_raw();
   display_amp_bar();
-  show_samples_lines();
+  show_samples_dots();
 
   matrix.swapBuffers(true);
 
