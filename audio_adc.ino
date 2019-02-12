@@ -1,5 +1,8 @@
 // experiment with FHT
 // 64 sample version.
+// JUST spec-an version.  draw red lines every 1 khz.
+// Note here:  even though our sample time is about 8 KHz, we've got something interrupting our process
+// that slows it down to 6 KHz.  
 
 
 #include <Adafruit_GFX.h>   // Core graphics library
@@ -185,7 +188,7 @@ void collect_accurate_samples( void )
 void collect_samples( void )
 {
   int i;
-  
+
   for (i = 0; i < SAMPLE_SIZE; i++)
   {
     sample[i] = analogRead(AUDIO_PIN);
@@ -287,6 +290,18 @@ void display_freq_raw( void )
   }
 }
 
+void draw_freq_bins( void )
+{
+  // Okay, math.
+  // 3 KHz total freq range over 32 bins.
+  // Means 93.75 Hz / bin.
+  // So, if we want to draw every 1kHz, thats pixel  10.67 and 21.33
+  matrix.drawLine(11,22,11,31,matrix.Color333(1,0,0));
+  matrix.drawLine(21,22,21,31,matrix.Color333(1,0,0));
+
+  // and a top border
+  matrix.drawLine(0,22,31,22,matrix.Color333(1,0,0));
+}
 
 void loop() 
 {
@@ -304,9 +319,10 @@ void loop()
   doFHT();
   
   matrix.fillScreen(0);
+  draw_freq_bins();
   display_freq_raw();
-  display_amp_bar();
-  show_samples_dots();
+  //display_amp_bar();
+  //show_samples_dots();
 
   matrix.swapBuffers(true);
 
