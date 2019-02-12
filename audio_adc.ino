@@ -282,8 +282,9 @@ void display_freq_raw( void )
   {
     mag = constrain(fht_lin_out[i], 0, MAX_FREQ_MAG);
     mag = map(mag, 0, MAX_FREQ_MAG, 0, -8);
-    
-    matrix.drawRect(i,32,1,mag, matrix.Color333(0,1,0));
+
+    // only have 16 colors, but 32 bins...hence the i/2
+    matrix.drawRect(i,32,1,mag, spectrum_colors[i/2]);
   }
 }
 
@@ -301,12 +302,16 @@ void loop()
 
   //print_samples();
 
+  matrix.fillScreen(0);
+  display_amp_bar();
+  show_samples_lines();
+
+  // for some reason, this appears to corrupt data...so I'm doing it as late as possible in the loop.
   doFHT();
   
-  matrix.fillScreen(0);
+
   display_freq_raw();
-  display_amp_bar();
-  show_samples_dots();
+
 
   matrix.swapBuffers(true);
 
