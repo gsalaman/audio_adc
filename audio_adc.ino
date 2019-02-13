@@ -1,14 +1,12 @@
-// experiment with FHT
-// 64 sample version.
+// 64 sample FHT 
 
-
+// These two defines are for the RGB Matrix
 #include <Adafruit_GFX.h>   // Core graphics library
 #include <RGBmatrixPanel.h> // Hardware-specific library
 
 
-// FHT defines.  Looks like this library defines an input buffer for us called fht_input.
-// That input wants to be a 16 bit signed int.
-//#define LOG_OUT 1
+// FHT defines.  This library defines an input buffer for us called fht_input of signed integers.  
+// We need to define how that library is used before including it.
 #define LIN_OUT 1
 #define FHT_N   64
 #include <FHT.h>
@@ -33,18 +31,15 @@
  */
 
 // Note "false" for double-buffering to consume less memory, or "true" for double-buffered.
+// Double-buffered makes updates look smoother.
 RGBmatrixPanel matrix(A, B, C,  D,  CLK, LAT, OE, true);
 
 //  We're using A5 as our audio input pin.
-//  To use the (slower) analogRead(), comment out this define.  Otherwise we do a faster bitbang of the ADC.
-//  NOTE:  If you are doing bit-banging, you need to connect 5v ref to AREF pin on the mega.
-//#define BIT_BANG_ADC
-
-#define MUX_MASK 0x05
 #define AUDIO_PIN A5
 
-#define GAIN_PIN  A4
-int gain=8;
+// Gain will tell us how to scale the samples to fit in the "time" space display.
+// We use this to divide the input signal, so bigger numbers make the input smaller.
+int gain=6;
 
 // These are the raw samples from the audio input.
 #define SAMPLE_SIZE FHT_N
@@ -74,7 +69,8 @@ uint16_t spectrum_colors[] =
   matrix.Color444(0,0,10)    // index 15 
 };
 
-// Mapped sample should give a number between 0 and 31.
+// This function takes a raw sample (0-511) and maps it to a number from 0-31 for display
+// on our RGB matrix.
 int map_sample( int input )
 {
   int mapped_sample;
@@ -95,26 +91,25 @@ int map_sample( int input )
   return mapped_sample;
 }
 
-void read_gain( void )
-{
-   int raw_gain;
-
-   raw_gain = analogRead(GAIN_PIN);
-   gain = map(raw_gain, 0, 1023, 1, 32);
-}
-
-
+// This function takes our buffer of input samples (time based) and
+// displays them on our RGB matrix.
 void show_samples_lines( void )
 {
   int x;
   int y;
-  int last_x=0;
-  int last_y=16;
+  int last_x;
+  int last_y;
 
-  // since we've got more samples than columns in our LED matrix, we've got two choices:
-  // 1) display only the first 32.  (That's what I'm going with).
-  // 2) display every other sample.
-  for (x=0; x < SAMPLE_SIZE; x++)
+  // since we've got more samples (64) than columns in our LED matrix (32), we need
+  // to decide which samples to display.  I'm going with a simple version:
+  //   only the first 32. 
+
+  // For the first column, start with the y value of that sample.
+  last_x = 0;
+  last_y = map_sample(sample[0]);
+
+  // now draw the rest.
+  for (x=1; x < SAMPLE_SIZE/2; x++)
   {
     y=map_sample(sample[x]);
     matrix.drawLine(last_x,last_y,x,y,matrix.Color333(0,0,1));
@@ -123,62 +118,13 @@ void show_samples_lines( void )
   }
 }
 
-void show_samples_dots( void )
-{
-  int x;
-  int y;
-
-  for (x=0;x<32;x++)
-  {
-    y = map_sample(sample[x]);
-    matrix.drawPixel(x,y,matrix.Color333(0,0,1));
-  }
-}
-
-
 void setup() 
 {
-  
+
   Serial.begin(9600);
-
+  
   matrix.begin();
-  
-  #ifdef BIT_BANG_ADC
-  setupADC();
-  #endif
-}
 
-void setupADC( void )
-{
-
-    ADCSRA = 0b11100101;      // set ADC to free running mode and set pre-scalar to 32 (0xe5)
-                              // pre-scalar 32 should give sample frequency of 38.64 KHz...which
-                              // will reproduce samples up to 19.32 KHz
-
-   // MATH FROM ABOVE...in measurements, it looks like prescalar of 32 gives me sample freq of 40 KHz
-   //    on the UNO.  Same on mega.  Hmmm.
-
-    // A5, internal reference.
-    ADMUX =  MUX_MASK;
-    
-    delay(50);  //wait for voltages to stabalize.  
-}
-
-void collect_accurate_samples( void )
-{
-  //use ADC internals.
-
-  int i;
-
-  for (i=0; i<SAMPLE_SIZE; i++)
-  {
-    while(!(ADCSRA & 0x10));        // wait for ADC to complete current conversion ie ADIF bit set
-    ADCSRA = 0b11110101 ;               // clear ADIF bit so that ADC can do next operation (0xf5)
-
-    sample[i] = ADC;
-  }
-
-  
   
 }
 
@@ -190,20 +136,6 @@ void collect_samples( void )
   {
     sample[i] = analogRead(AUDIO_PIN);
   }
-}
-
-
-
-void print_samples( void )
-{
-  int i;
-
-  Serial.println("Sample Buffer: ");
-  for (i=0; i<SAMPLE_SIZE; i++)
-  {
-    Serial.println(sample[i]);
-  }
-  Serial.println("===================");
 }
 
 int find_max_amp( void )
@@ -257,8 +189,6 @@ void doFHT( void )
     temp_sample = sample[i] - SAMPLE_BIAS;
 
     // Load the sample into the input array
-    // unsure whether we need to compress yet...
-    //fht_input[i] = temp_sample/4;
     fht_input[i] = temp_sample;
     
   }
@@ -266,10 +196,40 @@ void doFHT( void )
   fht_window();
   fht_reorder();
   fht_run();
-  fht_mag_lin();
+
+  // Commented out, because their lin mag functons corrupt memory!!!
+  //fht_mag_lin();  
 }
 
-#define MAX_FREQ_MAG 30
+// Since it looks like fht_mag_lin is corrupting memory.  Instead of debugging AVR assembly, 
+// I'm gonna code my own C version.  
+// I'll be using floating point math rather than assembly, so it'll be much slower...
+// ...but hopefully still faster than the FFT algos.
+int glenn_mag_calc(int bin)
+{
+  float sum_real_imag=0;
+  float diff_real_imag=0;
+  float result;
+  int   intMag;
+
+  // The FHT algos use the input array as it's output scratchpad.
+  // Bins 0 through N/2 are the sums of the real and imaginary parts.
+  // Bins N to N/2 are the differences, but note that it's reflected from the beginning.
+  sum_real_imag = fht_input[bin];
+  if (bin) diff_real_imag = fht_input[FHT_N - bin];
+  
+  result = (sum_real_imag * sum_real_imag) + (diff_real_imag * diff_real_imag);
+
+  result = sqrt(result);
+  result = result + 0.5;  // rounding
+
+  intMag = result;
+
+  return intMag;
+  
+}
+
+#define MAX_FREQ_MAG 20
 void display_freq_raw( void )
 {
   int i;
@@ -280,27 +240,31 @@ void display_freq_raw( void )
   // This works because our sample buffer is 2x the display rows...
   for (i = 0; i < SAMPLE_SIZE/2; i++)
   {
-    mag = constrain(fht_lin_out[i], 0, MAX_FREQ_MAG);
+    mag = glenn_mag_calc(i);
+    mag = constrain(mag, 0, MAX_FREQ_MAG);
     mag = map(mag, 0, MAX_FREQ_MAG, 0, -8);
 
     // only have 16 colors, but 32 bins...hence the i/2
     matrix.drawRect(i,32,1,mag, spectrum_colors[i/2]);
   }
+ 
 }
 
+void print_fht_buffer( void )
+{
+  int i;
+
+  for (i=0; i<FHT_N; i++)
+  {
+    Serial.println(fht_input[i]);
+  }
+  Serial.println("====");
+  
+}
 
 void loop() 
 {
-
-  //read_gain();
-  
-  #ifdef BIT_BANG_ADC
-  collect_accurate_samples();
-  #else
   collect_samples();
-  #endif
-
-  //print_samples();
 
   matrix.fillScreen(0);
   display_amp_bar();
@@ -309,16 +273,9 @@ void loop()
   // for some reason, this appears to corrupt data...so I'm doing it as late as possible in the loop.
   doFHT();
   
-
   display_freq_raw();
 
 
   matrix.swapBuffers(true);
 
-#if 0
-  Serial.println("hit enter for next sampling");
-  while (!Serial.available());
-  while (Serial.available()) Serial.read();
-#endif
-  
 }
